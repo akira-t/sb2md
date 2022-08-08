@@ -8,7 +8,7 @@ def main():
     filename = sys.argv[1]
     with open(filename, 'r', encoding='utf-8') as fr:
         sb = json.load(fr)
-        outdir = 'markdown/'
+        outdir = 'pages/'
         if not os.path.exists(outdir):
             os.mkdir(outdir)
         for p in sb['pages']:
@@ -19,9 +19,13 @@ def main():
             row = -1
             title = title.replace('/', '_')
             with open(f'{outdir}{title}.md', 'w', encoding='utf-8') as fw:
-                for i, l in enumerate(lines):
+                for i, line in enumerate(lines):
+                    # line <- {'text': '4月1日。今日はいい天気だ。', 'created': 1587518753, 'updated': 1650352301}
+                    l = line['text']
                     if i == 0:
-                        l = '# ' + l
+                        # l = '# ' + l  # Logseqではページタイトルはファイル名
+                        fw.write('tags:: fromScrapbox' + '\n\n')  # for Logseq tag
+                        continue
                     else:
                         # 複数行コードブロックの処理
                         if l.startswith('code:'):
@@ -56,11 +60,12 @@ def main():
 
 
 def convert(l: str) -> str:
-    l = escape_hash_tag(l)
+    # l = escape_hash_tag(l)  # ハッシュタグはそのまま使う (for LogSeq)
     l = convert_list(l)
-    l = convert_bold(l)
+    l = convert_bold(l)  # 画像の拡大[* [http://~]] は中身だけ取り出す
     l = convert_decoration(l)
-    l = convert_link(l)
+    l = convert_latex(l)
+    l = convert_link(l)  # convert_bold よりも後に実行する必要（[[]]のため）
     return l
 
 
@@ -78,12 +83,15 @@ def escape_hash_tag(l: str) -> str:
 def convert_list(l: str) -> str:
     '''
     先頭の空白をMarkdownのリストに変換。
+    空白がない場合もリストにする `AAA` → `- AAA`
     '''
     m = re.match(r'[ \t　]+', l)
     if m:
         # 空白の個数分インデントする
         l = l.replace(m.group(0),
                       (len(m.group(0)) - 1) * '  ' + '- ', 1)
+    else:
+        l = '- ' + l
     return l
 
 
@@ -93,6 +101,11 @@ def convert_bold(l: str) -> str:
     '''
     for m in re.finditer(r'\[\[(.+?)\]\]', ignore_code(l)):
         l = l.replace(m.group(0), '**' + m.group(1) + '**')
+    m = re.match(r'\[\*+?\s+?(\[[^ \]]+?\])\s*?\]', ignore_code(l))  # 画像の拡大?
+    # [** [http://~.png]] など画像なので中身だけ取り出す
+    if m:
+        # [*** [https://gyazo.com] ] -> [https://gyazo.com]
+        l = m.group(1)
     m = re.match(r'\[(\*\*|\*\*\*) (.+?)\]', ignore_code(l))  # おそらく見出し
     if m:
         l = '#' * (5 - len(m.group(1))) + ' ' + \
@@ -119,6 +132,32 @@ def convert_decoration(l: str) -> str:
     return l
 
 
+def convert_latex(l: str) -> str:
+    # LaTeXはネストがありうるので正規言語ではないため逐次処理
+    '''
+    数式をMarkdownに変換。
+    Inline style (一重$) に統一、前後のスペースを削除
+    E.g., [$ E[y|x]] -> $E[y|x]$
+    '''
+    convert_latex_deco = lambda s: '$'+s[2:-1].strip()+'$'
+    l = ignore_code(l)
+    latex_clauses = []
+    cnt = 0
+    st = 0
+    for i in range(len(l)):
+        if l[i:i+2] == r'[$':
+            st = i
+            cnt = 1
+        elif cnt>0 and l[i] == r'[':
+            cnt += 1
+        elif cnt>0 and l[i] == r']':
+            cnt -= 1
+            if cnt == 0:
+                latex_clauses.append(l[st:i+1])
+    for clause in latex_clauses:
+        l = l.replace(clause, convert_latex_deco(clause))
+    return l
+
 def convert_link(l: str) -> str:
     '''
     リンクをMarkdownに変換。
@@ -126,14 +165,28 @@ def convert_link(l: str) -> str:
     for m in re.finditer(r'\[(.+?)\]', ignore_code(l)):
         # タイトル+リンク形式の場合を考慮する
         tmp = m.group(1).split(' ')
-        if len(tmp) == 2:
+        if len(tmp) >= 2:
+            # ここが3つ以上の場合、、つまり [Hoge fuga piyo http://~~] とか [http://~~ hoge fuga piyo] の場合に対応してない
+            # さらに [hoge fuga piyo] の場合は内部リンク
             if tmp[0].startswith('http'):
-                link, title = tmp
+                link, title = tmp[0], ' '.join(tmp[1:])
+            elif tmp[-1].startswith('http'):
+                link, title = tmp[-1], ' '.join(tmp[:-1])
             else:
-                title, link = tmp
+                # 最初も最後もURLじゃない → 内部リンク
+                page_title = m.group(1).replace('/', '_')  # ページタイトルのエスケープ
+                l = l.replace(m.group(0), f'[[{page_title}]]')
+                continue
             l = l.replace(m.group(0), f'[{title}]({link})')
         else:
-            l = l.replace(m.group(0), m.group(0) + '()')
+            # [AAA]→内部リンク [http://~]→画像 と決め打ち
+            if tmp[0].startswith('http'):  # 画像
+                # 画像として解釈させるため.pngをつける 　![image.png]([https://gyazo.com/c913278aaaaaaaaaaaaa0c3])]  
+                l = l.replace(m.group(0), f'![image.png]({m.group(1)}.png)') \
+                    .replace('.png.png', '.png')  # for 元々 png がついてる場合
+            else:
+                page_title = m.group(1).replace('/', '_')  # ページタイトルのエスケープ
+                l = l.replace(m.group(0), f'[[{page_title}]]')
     return l
 
 
