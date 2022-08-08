@@ -101,9 +101,8 @@ def convert_bold(l: str) -> str:
     '''
     for m in re.finditer(r'\[\[(.+?)\]\]', ignore_code(l)):
         l = l.replace(m.group(0), '**' + m.group(1) + '**')
-    m = re.match(r'\[\*+?\s+?(\[[^ \]]+?\])\s*?\]', ignore_code(l))  # 画像の拡大?
-    # [** [http://~.png]] など画像なので中身だけ取り出す
-    if m:
+    for m in re.finditer(r'\[\*+?\s+?(\[[^ \]]+?\])\s*?\]', ignore_code(l)):
+        # 画像の拡大？ → 中身だけ取り出す
         # [*** [https://gyazo.com] ] -> [https://gyazo.com]
         l = m.group(1)
     m = re.match(r'\[(\*\*|\*\*\*) (.+?)\]', ignore_code(l))  # おそらく見出し
