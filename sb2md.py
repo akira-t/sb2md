@@ -12,13 +12,13 @@ def main():
         if not os.path.exists(outdir):
             os.mkdir(outdir)
         for p in sb['pages']:
-            title = p['title']
+            title = convert_title(p['title'])
             lines = p['lines']
             is_in_codeblock = False
             is_in_table = False
             row = -1
-            title = title.replace('/', '_')
-            with open(f'{outdir}{title}.md', 'w', encoding='utf-8') as fw:
+            filename = title.replace('/', '%2F')  # for Logseq
+            with open(f'{outdir}{filename}.md', 'w', encoding='utf-8') as fw:
                 for i, line in enumerate(lines):
                     # line <- {'text': '4月1日。今日はいい天気だ。', 'created': 1587518753, 'updated': 1650352301}
                     l = line['text']
@@ -58,6 +58,15 @@ def main():
                 if is_in_codeblock:
                     fw.write('```\n')
 
+
+def convert_title(l: str) -> str:
+    '''
+    ページタイトルの変換
+    上位階層のページのリスト
+    '''
+    l = l.replace('/', '_')
+    # l = l.replace('：', '/')  # for Logseq hierarchy (ページ階層を「：」で表現していた場合)
+    return l
 
 def convert(l: str) -> str:
     # l = escape_hash_tag(l)  # ハッシュタグはそのまま使う (for LogSeq)
@@ -173,7 +182,7 @@ def convert_link(l: str) -> str:
                 link, title = tmp[-1], ' '.join(tmp[:-1])
             else:
                 # 最初も最後もURLじゃない → 内部リンク
-                page_title = m.group(1).replace('/', '_')  # ページタイトルのエスケープ
+                page_title = convert_title(m.group(1))
                 l = l.replace(m.group(0), f'[[{page_title}]]')
                 continue
             l = l.replace(m.group(0), f'[{title}]({link})')
