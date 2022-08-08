@@ -99,8 +99,9 @@ def convert_list(l: str) -> str:
         # 空白の個数分インデントする
         l = l.replace(m.group(0),
                       (len(m.group(0)) - 1) * '  ' + '- ', 1)
-    else:
-        l = '- ' + l
+    elif len(l)>1:
+        if not re.match(r'[-\*]+', l):
+            l = '- ' + l  # Logseq では全てはリスト
     return l
 
 
